@@ -68,7 +68,9 @@ struct SettingsView: View {
             }
         }
         .formStyle(.grouped)
-        .frame(width: 500, height: 560)
+        .scrollDisabled(true)
+        .frame(width: 500)
+        .fixedSize(horizontal: false, vertical: true)
         .onDisappear {
             NSApp.setActivationPolicy(.accessory)
         }
