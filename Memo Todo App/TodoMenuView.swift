@@ -11,6 +11,7 @@ struct TodoMenuView: View {
     @FocusState private var focusedItemID: TodoItem.ID?
 
     @State private var datePickerItemID: TodoItem.ID?
+    @State private var hoveredItemID: TodoItem.ID?
 
     @Environment(\.openSettings) private var openSettings
 
@@ -56,8 +57,6 @@ struct TodoMenuView: View {
                 .frame(width: 0, height: 0)
                 .opacity(0)
 
-            Divider()
-
             HStack {
                 TextField("Add new item...", text: $newItemTitle)
                     .textFieldStyle(.plain)
@@ -89,32 +88,26 @@ struct TodoMenuView: View {
 
             Divider()
 
-            Button("Clear Completed") {
-                store.clearCompleted()
+            VStack(spacing: 0) {
+                Button("Clear Completed") {
+                    store.clearCompleted()
+                }
+                .disabled(store.completedCount == 0)
+
+                Button("Settings...") {
+                    let success = NSApp.setActivationPolicy(.regular)
+                    print("setActivationPolicy(.regular) succeeded: \(success)")
+                    NSApp.activate(ignoringOtherApps: true)
+                    openSettings()
+                }
+
+                Button("Quit") {
+                    NSApplication.shared.terminate(nil)
+                }
+                .keyboardShortcut("q")
             }
-            .buttonStyle(.plain)
-            .disabled(store.completedCount == 0)
-            .padding(8)
-
-            Divider()
-
-            Button("Settings...") {
-                let success = NSApp.setActivationPolicy(.regular)
-                print("setActivationPolicy(.regular) succeeded: \(success)")
-                NSApp.activate(ignoringOtherApps: true)
-                openSettings()
-            }
-            .buttonStyle(.plain)
-            .padding(8)
-
-            Divider()
-
-            Button("Quit") {
-                NSApplication.shared.terminate(nil)
-            }
-            .buttonStyle(.plain)
-            .keyboardShortcut("q")
-            .padding(8)
+            .buttonStyle(MenuRowButtonStyle())
+            .padding(.vertical, 4)
         }
         .frame(width: 340)
         .padding(.horizontal, 6)
@@ -136,7 +129,7 @@ struct TodoMenuView: View {
             } label: {
                 ZStack {
                     RoundedRectangle(cornerRadius: 4)
-                        .fill(item.isCompleted ? Color.accentColor : Color.clear)
+                        .fill(item.isCompleted ? Color.secondary : Color.clear)
                         .overlay(
                             RoundedRectangle(cornerRadius: 4)
                                 .strokeBorder(item.isCompleted ? Color.clear : Color.secondary, lineWidth: 1.5)
@@ -203,10 +196,19 @@ struct TodoMenuView: View {
                     .foregroundStyle(.secondary)
             }
             .buttonStyle(.plain)
-            .opacity(0.6)
+            .opacity(hoveredItemID == item.id ? 0.6 : 0)
+            .allowsHitTesting(hoveredItemID == item.id)
         }
         .padding(.horizontal, 8)
         .padding(.vertical, 4)
+        .hoverHighlight()
+        .onHover { isHovered in
+            if isHovered {
+                hoveredItemID = item.id
+            } else if hoveredItemID == item.id {
+                hoveredItemID = nil
+            }
+        }
     }
 
     private func sectionHeader(_ group: TaskDueGroup) -> some View {
@@ -288,6 +290,41 @@ struct TodoMenuView: View {
         case .end:
             store.items.append(contentsOf: moved)
         }
+    }
+}
+
+private struct HoverHighlight: ViewModifier {
+    var isEnabled = true
+    @State private var isHovered = false
+
+    func body(content: Content) -> some View {
+        content
+            .contentShape(Rectangle())
+            .background(
+                RoundedRectangle(cornerRadius: 12, style: .continuous)
+                    .fill(isEnabled && isHovered ? Color.primary.opacity(0.1) : Color.clear)
+            )
+            .onHover { isHovered = $0 }
+    }
+}
+
+private extension View {
+    func hoverHighlight(isEnabled: Bool = true) -> some View {
+        modifier(HoverHighlight(isEnabled: isEnabled))
+    }
+}
+
+private struct MenuRowButtonStyle: ButtonStyle {
+    @Environment(\.isEnabled) private var isEnabled
+
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label
+            .foregroundStyle(isEnabled ? Color.primary : Color.secondary)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(.horizontal, 8)
+            .padding(.vertical, 4)
+            .hoverHighlight(isEnabled: isEnabled)
+            .opacity(configuration.isPressed ? 0.6 : 1)
     }
 }
 
