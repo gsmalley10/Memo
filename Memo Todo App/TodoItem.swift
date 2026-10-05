@@ -26,13 +26,15 @@ struct TodoItem: Identifiable, Codable, Equatable {
     var isCompleted: Bool
     var priority: TaskPriority
     var dueDate: Date?
+    var categoryID: TaskCategory.ID?
 
-    init(id: UUID = UUID(), title: String, isCompleted: Bool = false, priority: TaskPriority = .medium, dueDate: Date? = nil) {
+    init(id: UUID = UUID(), title: String, isCompleted: Bool = false, priority: TaskPriority = .medium, dueDate: Date? = nil, categoryID: TaskCategory.ID? = nil) {
         self.id = id
         self.title = title
         self.isCompleted = isCompleted
         self.priority = priority
         self.dueDate = dueDate
+        self.categoryID = categoryID
     }
 
     var isOverdue: Bool {
@@ -41,7 +43,7 @@ struct TodoItem: Identifiable, Codable, Equatable {
     }
 
     private enum CodingKeys: String, CodingKey {
-        case id, title, isCompleted, priority, dueDate
+        case id, title, isCompleted, priority, dueDate, categoryID
     }
 
     init(from decoder: Decoder) throws {
@@ -51,5 +53,6 @@ struct TodoItem: Identifiable, Codable, Equatable {
         isCompleted = try container.decode(Bool.self, forKey: .isCompleted)
         priority = try container.decodeIfPresent(TaskPriority.self, forKey: .priority) ?? .medium
         dueDate = try container.decodeIfPresent(Date.self, forKey: .dueDate)
+        categoryID = try container.decodeIfPresent(UUID.self, forKey: .categoryID)
     }
 }

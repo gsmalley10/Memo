@@ -2,34 +2,21 @@ import SwiftUI
 
 @main
 struct MemoApp: App {
-    @State private var store = TodoStore()
     @NSApplicationDelegateAdaptor(AppDelegate.self) private var appDelegate
 
     var body: some Scene {
-        MenuBarExtra {
-            TodoMenuView(store: store)
-        } label: {
-            HStack(spacing: 4) {
-                if let systemImageName = store.menuBarIconStyle.systemImageName {
-                    Image(systemName: systemImageName)
-                } else {
-                    Image("MenuBarIcon")
-                }
-                if store.showCounter && !store.items.isEmpty {
-                    Text("\(store.completedCount)/\(store.items.count)")
-                }
-            }
-        }
-        .menuBarExtraStyle(.window)
-
         Settings {
-            SettingsView(store: store)
+            SettingsView(store: appDelegate.store)
         }
     }
 }
 
 final class AppDelegate: NSObject, NSApplicationDelegate {
+    let store = TodoStore()
+    private var statusItemController: StatusItemController?
+
     func applicationDidFinishLaunching(_ notification: Notification) {
         NSApp.setActivationPolicy(.accessory)
+        statusItemController = StatusItemController(store: store)
     }
 }

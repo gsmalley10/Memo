@@ -8,6 +8,17 @@ final class TodoStore {
         didSet { save() }
     }
 
+    var categories: [TaskCategory] = [] {
+        didSet { saveCategories() }
+    }
+
+    var collapsedCategoryIDs: Set<TaskCategory.ID> {
+        didSet {
+            guard collapsedCategoryIDs != oldValue else { return }
+            UserDefaults.standard.set(collapsedCategoryIDs.map(\.uuidString), forKey: collapsedCategoryIDsKey)
+        }
+    }
+
     var launchAtStartup: Bool {
         didSet {
             guard launchAtStartup != oldValue else { return }
@@ -75,10 +86,13 @@ final class TodoStore {
         items.filter(\.isCompleted).count
     }
 
+
     private static let maxUndoDepth = 20
     private var undoStack: [[TodoItem]] = []
 
     private let defaultsKey = "todoItems"
+    private let categoriesKey = "categories"
+    private let collapsedCategoryIDsKey = "collapsedCategoryIDs"
     private let menuBarIconStyleKey = "menuBarIconStyle"
     private let showCounterKey = "showCounter"
     private let defaultPriorityKey = "defaultPriority"
@@ -115,13 +129,53 @@ final class TodoStore {
         }
         playSoundOnCompletion = UserDefaults.standard.object(forKey: playSoundOnCompletionKey) as? Bool ?? false
         soundVolume = UserDefaults.standard.object(forKey: soundVolumeKey) as? Double ?? 1.0
+        let collapsed = UserDefaults.standard.stringArray(forKey: collapsedCategoryIDsKey) ?? []
+        collapsedCategoryIDs = Set(collapsed.compactMap(UUID.init(uuidString:)))
+        loadCategories()
         load()
+        clearMissingCategories()
     }
 
-    func addItem(_ title: String, priority: TaskPriority) {
+    func addItem(_ title: String, priority: TaskPriority, category: TaskCategory?) {
         let trimmed = title.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return }
-        items.append(TodoItem(title: trimmed, priority: priority))
+        items.append(TodoItem(title: trimmed, priority: priority, categoryID: category?.id))
+    }
+
+    /// Tasks in the category, or the uncategorized tasks when `category` is nil. A task whose
+    /// category no longer exists (e.g. restored by undo) counts as uncategorized.
+    func items(in category: TaskCategory?) -> [TodoItem] {
+        if let category {
+            return items.filter { $0.categoryID == category.id }
+        }
+        let validIDs = Set(categories.map(\.id))
+        return items.filter { item in
+            item.categoryID.map { !validIDs.contains($0) } ?? true
+        }
+    }
+
+    func addCategory() {
+        let usedColors = Set(categories.map(\.color))
+        let color = CategoryColor.allCases.first { !usedColors.contains($0) }
+            ?? CategoryColor.allCases[categories.count % CategoryColor.allCases.count]
+        categories.append(TaskCategory(name: "New Category", color: color))
+    }
+
+    /// Removes the category; its tasks become uncategorized.
+    func removeCategory(_ category: TaskCategory) {
+        categories.removeAll { $0.id == category.id }
+        for index in items.indices where items[index].categoryID == category.id {
+            items[index].categoryID = nil
+        }
+        collapsedCategoryIDs.remove(category.id)
+    }
+
+    func toggleCollapsed(_ category: TaskCategory) {
+        if collapsedCategoryIDs.contains(category.id) {
+            collapsedCategoryIDs.remove(category.id)
+        } else {
+            collapsedCategoryIDs.insert(category.id)
+        }
     }
 
     func toggle(_ item: TodoItem) {
@@ -190,6 +244,32 @@ final class TodoStore {
             }
         } catch {
             print("Failed to update launch at startup: \(error)")
+        }
+    }
+
+    /// Tasks pointing at a category that no longer exists become uncategorized.
+    private func clearMissingCategories() {
+        let validIDs = Set(categories.map(\.id))
+        let isOrphaned: (TodoItem) -> Bool = { item in
+            item.categoryID.map { !validIDs.contains($0) } ?? false
+        }
+        guard items.contains(where: isOrphaned) else { return }
+        for index in items.indices where isOrphaned(items[index]) {
+            items[index].categoryID = nil
+        }
+    }
+
+    private func saveCategories() {
+        guard let data = try? JSONEncoder().encode(categories) else { return }
+        UserDefaults.standard.set(data, forKey: categoriesKey)
+    }
+
+    private func loadCategories() {
+        if let data = UserDefaults.standard.data(forKey: categoriesKey),
+           let decoded = try? JSONDecoder().decode([TaskCategory].self, from: data) {
+            categories = decoded
+        } else {
+            categories = TaskCategory.defaults
         }
     }
 

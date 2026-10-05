@@ -1,10 +1,15 @@
 import SwiftUI
 
+/// The panel's contents. Spacing follows the design mock; the comments give the target
+/// positions in points from the panel's left edge.
 struct TodoMenuView: View {
     @Bindable var store: TodoStore
-    @State private var newItemTitle = ""
+    let panelState: PanelState
+
+    /// Keyed by category ID; nil is the uncategorized add field.
+    @State private var newItemTitles: [TaskCategory.ID?: String] = [:]
     @State private var newItemPriority: TaskPriority = .medium
-    @FocusState private var isTextFieldFocused: Bool
+    @FocusState private var focusedAddField: AddField?
 
     @State private var editingItemID: TodoItem.ID?
     @State private var editingTitle = ""
@@ -15,41 +20,32 @@ struct TodoMenuView: View {
 
     @Environment(\.openSettings) private var openSettings
 
-    private var displayedItems: [TodoItem] {
-        guard store.completedTaskBehavior == .hideImmediately else { return store.items }
-        return store.items.filter { !$0.isCompleted }
+    private func displayedItems(in category: TaskCategory?) -> [TodoItem] {
+        let items = store.items(in: category)
+        guard store.completedTaskBehavior == .hideImmediately else { return items }
+        return items.filter { !$0.isCompleted }
     }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
-            if displayedItems.isEmpty {
-                Text("No items yet")
-                    .foregroundStyle(.secondary)
-                    .padding(12)
-            } else {
+            ScrollView {
                 VStack(alignment: .leading, spacing: 0) {
-                    if store.showDueDates {
-                        ForEach(TaskDueGroup.allCases) { group in
-                            let itemsInGroup = displayedItems.filter { $0.dueGroup == group }
-                            if !itemsInGroup.isEmpty {
-                                sectionHeader(group)
-                                ForEach(itemsInGroup) { item in
-                                    row(for: item)
-                                }
-                                .reorderable()
-                            }
-                        }
-                    } else {
-                        ForEach(displayedItems) { item in
-                            row(for: item)
-                        }
-                        .reorderable()
+                    uncategorizedSection
+
+                    ForEach(store.categories) { category in
+                        categorySection(category)
+                            .padding(.top, 8.25)
                     }
                 }
                 .reorderContainer(for: TodoItem.self) { difference in
                     applyReorder(difference)
                 }
+                .padding(.top, 7)
+                .padding(.bottom, 8)
             }
+            .scrollBounceBehavior(.basedOnSize)
+            .frame(maxHeight: panelState.maxListHeight)
+            .fixedSize(horizontal: false, vertical: true)
 
             Button(action: { store.undo() }) { EmptyView() }
                 .keyboardShortcut("z", modifiers: .command)
@@ -57,61 +53,11 @@ struct TodoMenuView: View {
                 .frame(width: 0, height: 0)
                 .opacity(0)
 
-            HStack {
-                TextField("Add new item...", text: $newItemTitle)
-                    .textFieldStyle(.plain)
-                    .focused($isTextFieldFocused)
-                    .onSubmit(addItem)
-
-                if store.showPriority {
-                    Picker("", selection: $newItemPriority) {
-                        ForEach(TaskPriority.allCases) { priority in
-                            Label {
-                                Text(priority.label)
-                            } icon: {
-                                Circle()
-                                    .fill(priority.color)
-                                    .frame(width: 8, height: 8)
-                            }
-                            .tag(priority)
-                        }
-                    }
-                    .pickerStyle(.menu)
-                    .labelsHidden()
-                    .frame(width: 110)
-                }
-
-                Button("Add", action: addItem)
-                    .disabled(newItemTitle.trimmingCharacters(in: .whitespaces).isEmpty)
-            }
-            .padding(8)
-
-            Divider()
-
-            VStack(spacing: 0) {
-                Button("Clear Completed") {
-                    store.clearCompleted()
-                }
-                .disabled(store.completedCount == 0)
-
-                Button("Settings...") {
-                    let success = NSApp.setActivationPolicy(.regular)
-                    print("setActivationPolicy(.regular) succeeded: \(success)")
-                    NSApp.activate(ignoringOtherApps: true)
-                    openSettings()
-                }
-
-                Button("Quit") {
-                    NSApplication.shared.terminate(nil)
-                }
+            Button(action: { NSApplication.shared.terminate(nil) }) { EmptyView() }
                 .keyboardShortcut("q")
-            }
-            .buttonStyle(MenuRowButtonStyle())
-            .padding(.vertical, 4)
+                .frame(width: 0, height: 0)
+                .opacity(0)
         }
-        .frame(width: 340)
-        .padding(.horizontal, 6)
-        .padding(.top, 8)
         .onChange(of: focusedItemID) { oldValue, newValue in
             guard let editingItemID, oldValue == editingItemID, newValue != editingItemID,
                   let item = store.items.first(where: { $0.id == editingItemID }) else { return }
@@ -120,27 +66,157 @@ struct TodoMenuView: View {
         .onAppear {
             newItemPriority = store.defaultPriority
         }
+        .onReceive(NotificationCenter.default.publisher(for: .memoOpenSettings)) { _ in
+            openSettings()
+        }
     }
 
+    /// Tasks without a category sit above the categories, with no header.
+    private var uncategorizedSection: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            ForEach(displayedItems(in: nil)) { item in
+                row(for: item)
+            }
+            .reorderable()
+
+            addRow(for: nil)
+        }
+    }
+
+    @ViewBuilder
+    private func categorySection(_ category: TaskCategory) -> some View {
+        let isCollapsed = store.collapsedCategoryIDs.contains(category.id)
+
+        VStack(alignment: .leading, spacing: 0) {
+            sectionHeader(category, isCollapsed: isCollapsed)
+
+            if !isCollapsed {
+                ForEach(displayedItems(in: category)) { item in
+                    row(for: item)
+                }
+                .reorderable()
+
+                addRow(for: category)
+            }
+        }
+    }
+
+    // Chevron centred at x 20.25, name at x 32.5, rule running to x 336.
+    private func sectionHeader(_ category: TaskCategory, isCollapsed: Bool) -> some View {
+        let openCount = store.items(in: category).filter { !$0.isCompleted }.count
+
+        return Button {
+            withAnimation(.snappy(duration: 0.2)) {
+                store.toggleCollapsed(category)
+            }
+        } label: {
+            HStack(spacing: 0) {
+                Image(systemName: "chevron.down")
+                    .font(.system(size: 7, weight: .semibold))
+                    .foregroundStyle(category.color.color.opacity(0.6))
+                    .rotationEffect(.degrees(isCollapsed ? -90 : 0))
+                    .frame(width: 7)
+
+                Text(category.displayName.uppercased())
+                    .font(.system(size: 12, weight: .semibold))
+                    .tracking(0.2)
+                    .foregroundStyle(category.color.color)
+                    .padding(.leading, 8.75)
+
+                Text("\(openCount)")
+                    .font(.system(size: 10.5))
+                    .foregroundStyle(Theme.secondaryText)
+                    .padding(.leading, 5.5)
+
+                Rectangle()
+                    .fill(Theme.rule)
+                    .frame(height: 1)
+                    .padding(.leading, 7)
+            }
+            .padding(.leading, 16.75)
+            .padding(.trailing, 14.5)
+            .frame(height: 25.5)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+    }
+
+    // Plus centred on the checkbox column, placeholder at x 41.
+    private func addRow(for category: TaskCategory?) -> some View {
+        let field = AddField(category)
+
+        return HStack(spacing: 0) {
+            Image(systemName: "plus")
+                .font(.system(size: 8.5, weight: .semibold))
+                .foregroundStyle(category?.color.color.opacity(0.6) ?? Theme.secondaryText)
+                .frame(width: 14)
+
+            TextField(
+                "",
+                text: newItemTitleBinding(for: category),
+                prompt: Text(category.map { "add to \($0.displayName.lowercased())..." } ?? "add task...")
+                    .foregroundStyle(Theme.placeholderText)
+            )
+            .textFieldStyle(.plain)
+            .font(.system(size: 13))
+            .foregroundStyle(Theme.primaryText)
+            .focused($focusedAddField, equals: field)
+            .onSubmit { addItem(to: category) }
+            .padding(.leading, 11.5)
+
+            if store.showPriority, focusedAddField == field {
+                priorityMenu
+            }
+        }
+        .padding(.leading, 8.5)
+        .padding(.trailing, 8)
+        .frame(height: 30)
+        .padding(.horizontal, 7)
+        .padding(.top, 2)
+    }
+
+    private var priorityMenu: some View {
+        Menu {
+            Picker("Priority", selection: $newItemPriority) {
+                ForEach(TaskPriority.allCases) { priority in
+                    Text(priority.label).tag(priority)
+                }
+            }
+            .pickerStyle(.inline)
+            .labelsHidden()
+        } label: {
+            Circle()
+                .fill(newItemPriority.color)
+                .frame(width: 8, height: 8)
+                .padding(4)
+                .contentShape(Rectangle())
+        }
+        .menuStyle(.button)
+        .buttonStyle(.plain)
+        .menuIndicator(.hidden)
+        .fixedSize()
+        .help("Priority: \(newItemPriority.label)")
+    }
+
+    // 30pt rows: 14pt checkbox at x 15.5, title at x 41.
     private func row(for item: TodoItem) -> some View {
-        HStack {
+        HStack(spacing: 0) {
             Button {
                 store.toggle(item)
             } label: {
                 ZStack {
-                    RoundedRectangle(cornerRadius: 4)
-                        .fill(item.isCompleted ? Color.secondary : Color.clear)
-                        .overlay(
-                            RoundedRectangle(cornerRadius: 4)
-                                .strokeBorder(item.isCompleted ? Color.clear : Color.secondary, lineWidth: 1.5)
-                        )
                     if item.isCompleted {
+                        Circle()
+                            .fill(Theme.checkboxFill)
                         Image(systemName: "checkmark")
-                            .font(.system(size: 10, weight: .bold))
-                            .foregroundStyle(.white)
+                            .font(.system(size: 5.5, weight: .heavy))
+                            .foregroundStyle(Theme.checkmark)
+                    } else {
+                        Circle()
+                            .strokeBorder(Theme.checkboxStroke, lineWidth: 1.5)
                     }
                 }
-                .frame(width: 16, height: 16)
+                .frame(width: 14, height: 14)
                 .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
@@ -149,22 +225,28 @@ struct TodoMenuView: View {
                 Circle()
                     .fill(item.priority.color)
                     .frame(width: 8, height: 8)
+                    .padding(.leading, 11.5)
             }
 
-            if editingItemID == item.id {
-                TextField("Title", text: $editingTitle)
-                    .textFieldStyle(.plain)
-                    .focused($focusedItemID, equals: item.id)
-                    .onSubmit { commitEdit(for: item) }
-            } else {
-                Text(item.title)
-                    .strikethrough(item.isCompleted)
-                    .foregroundStyle(item.isCompleted ? Color.secondary : Color.primary)
-                    .contentShape(Rectangle())
-                    .onTapGesture { startEditing(item) }
+            Group {
+                if editingItemID == item.id {
+                    TextField("Title", text: $editingTitle)
+                        .textFieldStyle(.plain)
+                        .foregroundStyle(Theme.primaryText)
+                        .focused($focusedItemID, equals: item.id)
+                        .onSubmit { commitEdit(for: item) }
+                } else {
+                    Text(item.title)
+                        .strikethrough(item.isCompleted, color: Theme.completedText)
+                        .foregroundStyle(item.isCompleted ? Theme.completedText : Theme.primaryText)
+                        .contentShape(Rectangle())
+                        .onTapGesture { startEditing(item) }
+                }
             }
+            .font(.system(size: 14))
+            .padding(.leading, store.showPriority ? 8 : 11.5)
 
-            Spacer()
+            Spacer(minLength: 8)
 
             if store.showDueDates {
                 Button {
@@ -172,11 +254,12 @@ struct TodoMenuView: View {
                 } label: {
                     if let dueDate = item.dueDate {
                         Text(Self.dueDateLabel(dueDate))
-                            .font(.caption)
-                            .foregroundStyle(item.isOverdue ? Color.red : Color.secondary)
+                            .font(.system(size: 11))
+                            .foregroundStyle(item.isOverdue ? CategoryColor.red.color : Theme.secondaryText)
                     } else {
                         Image(systemName: "calendar.badge.plus")
-                            .foregroundStyle(.secondary)
+                            .font(.system(size: 12))
+                            .foregroundStyle(Theme.secondaryText)
                             .opacity(0.6)
                     }
                 }
@@ -187,21 +270,28 @@ struct TodoMenuView: View {
                 )) {
                     dueDatePicker(for: item)
                 }
+                .padding(.trailing, 8)
             }
 
             Button {
                 store.delete(item)
             } label: {
                 Image(systemName: "xmark")
-                    .foregroundStyle(.secondary)
+                    .font(.system(size: 9, weight: .semibold))
+                    .foregroundStyle(Theme.secondaryText)
+                    .frame(width: 14, height: 14)
+                    .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
-            .opacity(hoveredItemID == item.id ? 0.6 : 0)
+            .opacity(hoveredItemID == item.id ? 1 : 0)
             .allowsHitTesting(hoveredItemID == item.id)
         }
-        .padding(.horizontal, 8)
-        .padding(.vertical, 4)
+        .padding(.vertical, 6)
+        .padding(.leading, 8.5)
+        .padding(.trailing, 8)
+        .frame(minHeight: 30)
         .hoverHighlight()
+        .padding(.horizontal, 7)
         .onHover { isHovered in
             if isHovered {
                 hoveredItemID = item.id
@@ -209,15 +299,6 @@ struct TodoMenuView: View {
                 hoveredItemID = nil
             }
         }
-    }
-
-    private func sectionHeader(_ group: TaskDueGroup) -> some View {
-        Text(group.label)
-            .font(.caption.weight(.semibold))
-            .foregroundStyle(.secondary)
-            .padding(.horizontal, 8)
-            .padding(.top, 8)
-            .padding(.bottom, 2)
     }
 
     private func dueDatePicker(for item: TodoItem) -> some View {
@@ -252,11 +333,18 @@ struct TodoMenuView: View {
         return formatter.string(from: date)
     }
 
-    private func addItem() {
-        store.addItem(newItemTitle, priority: newItemPriority)
-        newItemTitle = ""
+    private func newItemTitleBinding(for category: TaskCategory?) -> Binding<String> {
+        Binding(
+            get: { newItemTitles[category?.id, default: ""] },
+            set: { newItemTitles[category?.id] = $0 }
+        )
+    }
+
+    private func addItem(to category: TaskCategory?) {
+        store.addItem(newItemTitles[category?.id, default: ""], priority: newItemPriority, category: category)
+        newItemTitles[category?.id] = ""
         newItemPriority = store.defaultPriority
-        isTextFieldFocused = true
+        focusedAddField = AddField(category)
     }
 
     private func startEditing(_ item: TodoItem) {
@@ -285,6 +373,12 @@ struct TodoMenuView: View {
 
         switch difference.destination.position {
         case .before(let id):
+            // Dropping onto a task in another category (or none) moves the dragged tasks there.
+            if let target = store.items.first(where: { $0.id == id }) {
+                for index in moved.indices {
+                    moved[index].categoryID = target.categoryID
+                }
+            }
             let index = store.items.firstIndex { $0.id == id } ?? store.items.endIndex
             store.items.insert(contentsOf: moved, at: index)
         case .end:
@@ -293,8 +387,17 @@ struct TodoMenuView: View {
     }
 }
 
+/// Identifies an "add" field for focus: one per category, plus the uncategorized one.
+private enum AddField: Hashable {
+    case uncategorized
+    case category(TaskCategory.ID)
+
+    init(_ category: TaskCategory?) {
+        self = category.map { .category($0.id) } ?? .uncategorized
+    }
+}
+
 private struct HoverHighlight: ViewModifier {
-    var isEnabled = true
     @State private var isHovered = false
 
     func body(content: Content) -> some View {
@@ -302,33 +405,20 @@ private struct HoverHighlight: ViewModifier {
             .contentShape(Rectangle())
             .background(
                 RoundedRectangle(cornerRadius: 12, style: .continuous)
-                    .fill(isEnabled && isHovered ? Color.primary.opacity(0.1) : Color.clear)
+                    .fill(isHovered ? Theme.hover : Color.clear)
             )
             .onHover { isHovered = $0 }
     }
 }
 
 private extension View {
-    func hoverHighlight(isEnabled: Bool = true) -> some View {
-        modifier(HoverHighlight(isEnabled: isEnabled))
-    }
-}
-
-private struct MenuRowButtonStyle: ButtonStyle {
-    @Environment(\.isEnabled) private var isEnabled
-
-    func makeBody(configuration: Configuration) -> some View {
-        configuration.label
-            .foregroundStyle(isEnabled ? Color.primary : Color.secondary)
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .padding(.horizontal, 8)
-            .padding(.vertical, 4)
-            .hoverHighlight(isEnabled: isEnabled)
-            .opacity(configuration.isPressed ? 0.6 : 1)
+    func hoverHighlight() -> some View {
+        modifier(HoverHighlight())
     }
 }
 
 #Preview {
-    let store = TodoStore()
-    return TodoMenuView(store: store)
+    PanelChrome(state: PanelState()) {
+        TodoMenuView(store: TodoStore(), panelState: PanelState())
+    }
 }

@@ -19,6 +19,16 @@ struct SettingsView: View {
                 .disabled(!store.playSoundOnCompletion)
             }
 
+            Section("Categories") {
+                ForEach($store.categories) { $category in
+                    categoryRow($category)
+                }
+
+                Button("Add Category") {
+                    store.addCategory()
+                }
+            }
+
             Section("Features") {
                 Toggle("Show Priority", isOn: $store.showPriority)
                     .toggleStyle(.checkbox)
@@ -73,6 +83,43 @@ struct SettingsView: View {
         .fixedSize(horizontal: false, vertical: true)
         .onDisappear {
             NSApp.setActivationPolicy(.accessory)
+        }
+    }
+
+    private func categoryRow(_ category: Binding<TaskCategory>) -> some View {
+        HStack(spacing: 8) {
+            Menu {
+                Picker("Color", selection: category.color) {
+                    ForEach(CategoryColor.allCases) { color in
+                        Text(color.label).tag(color)
+                    }
+                }
+                .pickerStyle(.inline)
+                .labelsHidden()
+            } label: {
+                Circle()
+                    .fill(category.wrappedValue.color.color)
+                    .frame(width: 12, height: 12)
+                    .padding(2)
+                    .contentShape(Rectangle())
+            }
+            .menuStyle(.button)
+            .buttonStyle(.plain)
+            .menuIndicator(.hidden)
+            .fixedSize()
+            .help("Color")
+
+            TextField("Category Name", text: category.name)
+                .textFieldStyle(.roundedBorder)
+                .labelsHidden()
+
+            Button {
+                store.removeCategory(category.wrappedValue)
+            } label: {
+                Image(systemName: "minus.circle")
+            }
+            .buttonStyle(.borderless)
+            .help("Remove Category (its tasks become uncategorized)")
         }
     }
 }
