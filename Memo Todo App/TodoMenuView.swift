@@ -27,15 +27,22 @@ struct TodoMenuView: View {
                     .padding(12)
             } else {
                 VStack(alignment: .leading, spacing: 0) {
-                    ForEach(TaskDueGroup.allCases) { group in
-                        let itemsInGroup = displayedItems.filter { $0.dueGroup == group }
-                        if !itemsInGroup.isEmpty {
-                            sectionHeader(group)
-                            ForEach(itemsInGroup) { item in
-                                row(for: item)
+                    if store.showDueDates {
+                        ForEach(TaskDueGroup.allCases) { group in
+                            let itemsInGroup = displayedItems.filter { $0.dueGroup == group }
+                            if !itemsInGroup.isEmpty {
+                                sectionHeader(group)
+                                ForEach(itemsInGroup) { item in
+                                    row(for: item)
+                                }
+                                .reorderable()
                             }
-                            .reorderable()
                         }
+                    } else {
+                        ForEach(displayedItems) { item in
+                            row(for: item)
+                        }
+                        .reorderable()
                     }
                 }
                 .reorderContainer(for: TodoItem.self) { difference in
@@ -57,21 +64,23 @@ struct TodoMenuView: View {
                     .focused($isTextFieldFocused)
                     .onSubmit(addItem)
 
-                Picker("", selection: $newItemPriority) {
-                    ForEach(TaskPriority.allCases) { priority in
-                        Label {
-                            Text(priority.label)
-                        } icon: {
-                            Circle()
-                                .fill(priority.color)
-                                .frame(width: 8, height: 8)
+                if store.showPriority {
+                    Picker("", selection: $newItemPriority) {
+                        ForEach(TaskPriority.allCases) { priority in
+                            Label {
+                                Text(priority.label)
+                            } icon: {
+                                Circle()
+                                    .fill(priority.color)
+                                    .frame(width: 8, height: 8)
+                            }
+                            .tag(priority)
                         }
-                        .tag(priority)
                     }
+                    .pickerStyle(.menu)
+                    .labelsHidden()
+                    .frame(width: 110)
                 }
-                .pickerStyle(.menu)
-                .labelsHidden()
-                .frame(width: 110)
 
                 Button("Add", action: addItem)
                     .disabled(newItemTitle.trimmingCharacters(in: .whitespaces).isEmpty)
@@ -108,6 +117,7 @@ struct TodoMenuView: View {
             .padding(8)
         }
         .frame(width: 340)
+        .padding(.horizontal, 6)
         .padding(.top, 8)
         .onChange(of: focusedItemID) { oldValue, newValue in
             guard let editingItemID, oldValue == editingItemID, newValue != editingItemID,
@@ -142,9 +152,11 @@ struct TodoMenuView: View {
             }
             .buttonStyle(.plain)
 
-            Circle()
-                .fill(item.priority.color)
-                .frame(width: 8, height: 8)
+            if store.showPriority {
+                Circle()
+                    .fill(item.priority.color)
+                    .frame(width: 8, height: 8)
+            }
 
             if editingItemID == item.id {
                 TextField("Title", text: $editingTitle)
@@ -161,25 +173,27 @@ struct TodoMenuView: View {
 
             Spacer()
 
-            Button {
-                datePickerItemID = item.id
-            } label: {
-                if let dueDate = item.dueDate {
-                    Text(Self.dueDateLabel(dueDate))
-                        .font(.caption)
-                        .foregroundStyle(item.isOverdue ? Color.red : Color.secondary)
-                } else {
-                    Image(systemName: "calendar.badge.plus")
-                        .foregroundStyle(.secondary)
-                        .opacity(0.6)
+            if store.showDueDates {
+                Button {
+                    datePickerItemID = item.id
+                } label: {
+                    if let dueDate = item.dueDate {
+                        Text(Self.dueDateLabel(dueDate))
+                            .font(.caption)
+                            .foregroundStyle(item.isOverdue ? Color.red : Color.secondary)
+                    } else {
+                        Image(systemName: "calendar.badge.plus")
+                            .foregroundStyle(.secondary)
+                            .opacity(0.6)
+                    }
                 }
-            }
-            .buttonStyle(.plain)
-            .popover(isPresented: Binding(
-                get: { datePickerItemID == item.id },
-                set: { if !$0 { datePickerItemID = nil } }
-            )) {
-                dueDatePicker(for: item)
+                .buttonStyle(.plain)
+                .popover(isPresented: Binding(
+                    get: { datePickerItemID == item.id },
+                    set: { if !$0 { datePickerItemID = nil } }
+                )) {
+                    dueDatePicker(for: item)
+                }
             }
 
             Button {

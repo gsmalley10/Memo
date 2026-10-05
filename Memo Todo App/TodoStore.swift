@@ -36,6 +36,20 @@ final class TodoStore {
         }
     }
 
+    var showPriority: Bool {
+        didSet {
+            guard showPriority != oldValue else { return }
+            UserDefaults.standard.set(showPriority, forKey: showPriorityKey)
+        }
+    }
+
+    var showDueDates: Bool {
+        didSet {
+            guard showDueDates != oldValue else { return }
+            UserDefaults.standard.set(showDueDates, forKey: showDueDatesKey)
+        }
+    }
+
     var completedTaskBehavior: CompletedTaskBehavior {
         didSet {
             guard completedTaskBehavior != oldValue else { return }
@@ -68,6 +82,8 @@ final class TodoStore {
     private let menuBarIconStyleKey = "menuBarIconStyle"
     private let showCounterKey = "showCounter"
     private let defaultPriorityKey = "defaultPriority"
+    private let showPriorityKey = "showPriority"
+    private let showDueDatesKey = "showDueDates"
     private let completedTaskBehaviorKey = "completedTaskBehavior"
     private let playSoundOnCompletionKey = "playSoundOnCompletion"
     private let soundVolumeKey = "soundVolume"
@@ -89,6 +105,8 @@ final class TodoStore {
         } else {
             defaultPriority = .medium
         }
+        showPriority = UserDefaults.standard.object(forKey: showPriorityKey) as? Bool ?? true
+        showDueDates = UserDefaults.standard.object(forKey: showDueDatesKey) as? Bool ?? true
         if let rawValue = UserDefaults.standard.string(forKey: completedTaskBehaviorKey),
            let behavior = CompletedTaskBehavior(rawValue: rawValue) {
             completedTaskBehavior = behavior

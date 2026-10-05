@@ -30,6 +30,13 @@ struct SettingsView: View {
                     .disabled(!store.playSoundOnCompletion)
                 }
 
+                Section("Features") {
+                    Toggle("Show Priority", isOn: $store.showPriority)
+                        .toggleStyle(.checkbox)
+                    Toggle("Show Due Dates", isOn: $store.showDueDates)
+                        .toggleStyle(.checkbox)
+                }
+
                 Section("Task Defaults") {
                     Picker("Menu Bar Icon", selection: $store.menuBarIconStyle) {
                         ForEach(MenuBarIconStyle.allCases) { style in
@@ -49,16 +56,18 @@ struct SettingsView: View {
                         }
                     }
 
-                    Picker("Default Priority", selection: $store.defaultPriority) {
-                        ForEach(TaskPriority.allCases) { priority in
-                            Label {
-                                Text(priority.label)
-                            } icon: {
-                                Circle()
-                                    .fill(priority.color)
-                                    .frame(width: 8, height: 8)
+                    if store.showPriority {
+                        Picker("Default Priority", selection: $store.defaultPriority) {
+                            ForEach(TaskPriority.allCases) { priority in
+                                Label {
+                                    Text(priority.label)
+                                } icon: {
+                                    Circle()
+                                        .fill(priority.color)
+                                        .frame(width: 8, height: 8)
+                                }
+                                .tag(priority)
                             }
-                            .tag(priority)
                         }
                     }
 
