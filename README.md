@@ -73,5 +73,4 @@ open "Memo Todo App.xcodeproj"
 | Customizable Icon | Choose from several menu bar icon styles (Default, Checklist, Checkmark Circle, List, Star, Tray). |
 | Launch at Startup | Optionally launch the app automatically at login. |
 | Persistent Storage | Tasks and preferences are saved locally and restored between launches. |
-| Send Feedback | Report a bug, request a feature, or ask a question directly from Settings — no need to leave the app. |
 
