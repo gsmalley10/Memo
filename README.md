@@ -26,7 +26,7 @@ Memo isn't notarized, so macOS Gatekeeper will block it the first time you open 
 3. Find *"Memo.app" was blocked to protect your Mac* and click **Open Anyway**, then confirm with your password or Touch ID.
 4. Open **Memo.app** again — a final confirmation dialog appears. Click **Open**.
 
-This is only needed once, for this initial install. Memo checks for updates automatically and installs them itself via Sparkle — those updates do not require repeating the steps above.
+This is only needed once, for this initial install.
 
 **Note:** On that first open, macOS may run a one-time security scan on the new binary, and you might briefly see *"Memo.app" is not responding"*. This isn't a crash — just wait a few seconds and open it again; it'll launch normally from then on.
 
@@ -73,6 +73,5 @@ open "Memo Todo App.xcodeproj"
 | Customizable Icon | Choose from several menu bar icon styles (Default, Checklist, Checkmark Circle, List, Star, Tray). |
 | Launch at Startup | Optionally launch the app automatically at login. |
 | Persistent Storage | Tasks and preferences are saved locally and restored between launches. |
-| Automatic Updates | Memo checks for new versions in the background (or on demand from Settings) and installs updates via [Sparkle](https://sparkle-project.org). |
 | Send Feedback | Report a bug, request a feature, or ask a question directly from Settings — no need to leave the app. |
 
